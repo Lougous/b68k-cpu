@@ -72,11 +72,25 @@ This is how translates a byte access from the 68000 (UDS# or LDS# alone)
 ![Write cycle - single word](/doc/bus_write_single.png)
 ![Read cycle - single word](/doc/bus_read_single.png)
 
+note: peripherals like the MFP ignore the address bits 16:1 and can ignore the ALE# signal.
+
 #### multiple access cycles
 
 This is how translates a 16-bits access from the 68000 (UDS# and LDS#)
 
 ![Write cycle - multiple words](/doc/bus_write_multiple.png)
+
+### Bootstrap loading
+
+Right after a reset, the CPLD starts by transfering 512 bytes of data from the MFP FLASH_DATA register into the first bytes of DRAM. Then the very first 68000 memory access (at 0000000h) is performed.
+
+Because any software is to be much bigger than just 512-bytes, this chunk of code must itself include assembly instructions to copy the rest of the code - still accessing FLASH_DATA register.
+
+The MFP contains two software images for the 68000:
+* a serial bootstrap, loading from the serial interface the binary to jump in, that is enables by pressing 's' key on a keyboard plugged into the PS/2 port
+* or an embedded binary to jump in.
+
+To change the embedded binary, the MFP firmware must be recompiled and programmed (the 68000 binary is a constant data table within the microcontroller firmware).
 
 ## MFP (multifunction peripheral)
 
@@ -98,7 +112,7 @@ The MFP has only two memory locations accessible through the expansion bus: one 
 
 | register    | index   | description             |
 |:-----------:|:-------:|:------------------------|
-| FLASH_DATA  | 0       | boot flash data - address auto increment |
+| FLASH_DATA  | 0       | boot flash data access. flash data pointer auto increments |
 | TICKS       | 3       | 4-us ticks counter, 0-249 |
 | UART_STS    | 4       | UART status<br>bit 7: TX ready<br>bit 1: RX FIFO overflow<br>bit 0: RX FIFO underflow |
 | UART_DATA   | 5       | UART data in/out |
