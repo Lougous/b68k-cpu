@@ -1,0 +1,19 @@
+{
+  signal: [
+  {name: 'ALE#', wave: '1.0101................'},
+  {name: 'CE#',  wave: '1......0...1...0...1..', node: '.......A...B'},
+  {name: 'WE#',  wave: 'x.....0....x..0....x..'},
+  {name: 'A0',   wave: 'x.....0.......1....x..'},
+  {name: 'AD',   wave: 'xx2.3.4....x..5....x..', data: ['A 16:9', 'A 8:1', 'D0', 'D1']},
+  {name: 'ACK#', wave: 'u.........0.u.....0.u.', node: '..........C.D'},
+  {                                      node: '.......E..FGH'},
+  ],
+  head: {
+    text:'Write cycle - multiple words',
+    tick:0,
+    every:2
+  },
+  edge: [
+    'A-E', 'C-F', 'B-G', 'D-H', 'E<->F t1', 'F<->G t2', 'G<->H t3'
+  ]
+}
