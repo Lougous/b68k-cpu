@@ -16,7 +16,7 @@ The block diagram below depicts the board architecture:
 
 ## Board glue logic
 
-Most board glue logic is implemented with an Altera EPM7128S CPLD. This part is obsolete but modern replacement exists with Actel Microsemi Microchip ATF1508AS (never tested though). The CPLD implements:
+Most board glue logic is implemented with an Altera EPM7128S CPLD. This part is obsolete but modern replacement exists with ~~Actel~~ ~~Microsemi~~ Microchip ATF1508AS (never tested though). The CPLD implements:
 * DRAM address multiplexing
 * DRAM refresh
 * basic memory management: base address translation and inbound check with power of two alignment constraints
@@ -26,6 +26,19 @@ Most board glue logic is implemented with an Altera EPM7128S CPLD. This part is 
 Expansion bus also uses a few discrete logic (74245 buffers and 74138 address decoder).
 
 An additional 74148 encodes interrupt sources to CPU IPL0/1/2.
+
+### memory management
+
+The CPLD provides very basic memory management capabilities, for user mode accesses only (FC2 set to 0). It relies on two value set with four registers. These registers are write only, 16-bits, but only the upper bit 15:8 are used.
+
+| register    | address | description             |
+|:-----------:|:-------:|:------------------------|
+| MMU_BASE_LO | FE0000h | base address bits 19:12 |
+| MMU_BASE_HI | FE0002h | base address bits 22:20 |
+| MMU_MASK_LO | FE0004h | address mask bits 19:12 |
+| MMU_MASK_HI | FE0006h | address mask bits 21:20 |
+
+Any user address is and'ed with MMU_MASK then or'ed with MMU_BASE. It results in a memory area allocated to a user program with a power of two size, with a base address aligned to its own size. Any user access that targets an address above the allocated size ends with a bus error.
 
 ### interrupt management
 
@@ -75,6 +88,29 @@ This is a software defined chip base on a PIC18F27K42 microcontroller. It provid
 * debug register (POST or so)
 
 The MFP has only two memory locations accessible through the expansion bus: one to set the actual register to access, the other to read or write data from/to the register.
+
+| register    | address | description             |
+|:-----------:|:-------:|:------------------------|
+| MFP_DATA    | F00000h | MFP register data |
+| MFP_ADDRESS | F00001h | MFP register index |
+
+### Register set
+
+| register    | index   | description             |
+|:-----------:|:-------:|:------------------------|
+| FLASH_DATA  | 0       | boot flash data - address auto increment |
+| TICKS       | 3       | 4-us ticks counter, 0-249 |
+| UART_STS    | 4       | UART status<br>bit 7: TX ready<br>bit 1: RX FIFO overflow<br>bit 0: RX FIFO underflow |
+| UART_DATA   | 5       | UART data in/out |
+| POST        | 7       | POST code (debug) |
+| PS2P0_STS   | 8       | PS/2 port 0 status<br>bit 0: data available |
+| PS2P0_DATA  | 9       | PS/2 port 0 data |
+| PS2P1_STS   | 10      | PS/2 port 1 status<br>bit 0: data available |
+| PS2P1_DATA  | 11      | PS/2 port 1 data |
+| SYSCFG      | 12      | system tick configuration<br>bit 0: enable timer interrupt<br>bit 5: set by bootstap loader to prevent flash to RAM boot transfer<br>bit 6: enable self immediate interrupt<br>bit 7: soft reset |
+| SYSSTS      | 13      |  system tick status<br>bit 0: timer interrupt pending<br>bit 6: self immediate interrupt pending |
+| IRQCFG      | 14      | interrupt controller configuration<br>bit 0: enable RTC interrupt<br>bit 1: enable PS/2 keyboard interrupt<br>bit 2: enable PS/2 mouse interrupt<br>bit 3: enable UART RX interrupt |
+| IRQSTS      | 15      | interrupt controller status<br>bit 0: RTC interrupt pending<br>bit 1: PS/2 keyboard interrupt pending<br>bit 2: PS/2 mouse interrupt pending<br>bit 3: UART RX interrupt pending |
 
 # Memory mapping
 
