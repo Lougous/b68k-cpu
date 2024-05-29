@@ -1,2 +1,7 @@
 *~
 *.kicad_prl
+
+glue/db/
+glue/incremental_db/
+glue/output_files/
+glue/simulation/
