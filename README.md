@@ -47,7 +47,7 @@ The autovectored interrupt scheme is used (VPA# assertion). To save pins on the 
 ### 8-bits expansion bus
 
 This bus provides access to 5 peripherals:
-* 4 available through dedicated connectors
+* 4 available through dedicated connectors (2x10 female pin headers)
 * 1 embeded to the board: the MFP
 
 It provides for each peripheral up to 128kiB aperture into CPU memory space.
@@ -136,7 +136,7 @@ The MFP has only two memory locations accessible through the expansion bus: one 
 | F20000h - F3FFFFh | S      | 128kiB | expansion bus connector J9                                     |
 | F40000h - F5FFFFh | S      | 128kiB | expansion bus connector J11                                    |
 | F60000h - F7FFFFh | S      | 128kiB | DO NOT USE. reserved for expansion bus hardware implementation |
-| F80000h - F9FFFFh | U*/S   | 128kiB | expansion bus connector J10. user access to be removed         |
-| FA0000h - FBFFFFh | S      | 128kiB | DO NOT USE. unmapped, might be used for another slop           |
+| F80000h - F9FFFFh | U*/S   | 128kiB | expansion bus connector J10. *: user access to be removed      |
+| FA0000h - FBFFFFh | S      | 128kiB | DO NOT USE. unmapped, might be used for another peripheral slot |
 | FC0000h - FDFFFFh | S      | 128kiB | expansion bus connector J8                                     |
 | FE0000h - FFFFFFh | S      | 128kiB | restricted to PMMU register configuration                      |
