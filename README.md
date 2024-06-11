@@ -151,6 +151,6 @@ This table below is no spec, it just shows the parts that equip the board on my 
 | U2 | 74F138 |
 | U3, U6, U7 | 74F245 |
 | U4 | EPM7128SLC84-10 |
-| U5 | PIC18F24K47 |
+| U5 | PIC18F27K42SP |
 | U8 | 74F148 |
 | X2 | 12-MHz |
