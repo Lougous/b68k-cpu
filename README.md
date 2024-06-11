@@ -1,10 +1,10 @@
 # Overview
 
-This is a single board computer based on Motorola 68000. It featues:
+This is a single board computer based on Motorola 68000. It features:
 * 512kiB to 8MiB DRAM (SIMM 30 pins x2)
 * basic memory protection / paging
 * 8bits expansion bus with 4 slots
-* PS/2 keyboard ans mouse support
+* PS/2 keyboard and mouse support
 * serial link (TTL)
 * boot with serial bootstrap or user flash
 
@@ -12,7 +12,6 @@ Some pictures [here](/doc).
 
 The block diagram below depicts the board architecture:
 ![board architecture](/doc/arch.png)
-
 
 ## Board glue logic
 
@@ -140,3 +139,18 @@ The MFP has only two memory locations accessible through the expansion bus: one 
 | FA0000h - FBFFFFh | S      | 128kiB | DO NOT USE. unmapped, might be used for another peripheral slot |
 | FC0000h - FDFFFFh | S      | 128kiB | expansion bus connector J8                                     |
 | FE0000h - FFFFFFh | S      | 128kiB | restricted to PMMU register configuration                      |
+
+# BOM
+
+This table below is no spec, it just shows the parts that equip the board on my desk.
+
+| Reference  | Part |
+|:-----------------:|:------:|
+| RN1 | not populated |
+| U1 | MC68HC000FN20 |
+| U2 | 74F138 |
+| U3, U6, U7 | 74F245 |
+| U4 | EPM7128SLC84-10 |
+| U5 | PIC18F24K47 |
+| U8 | 74F148 |
+| X2 | 12-MHz |
