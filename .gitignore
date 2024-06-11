@@ -1,7 +1,10 @@
 *~
 *.kicad_prl
+board/b68-backups
+fp-info-cache
 
 glue/db/
 glue/incremental_db/
 glue/output_files/
 glue/simulation/
+glue/glue.qws
