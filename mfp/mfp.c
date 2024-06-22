@@ -118,8 +118,8 @@ void putch(unsigned char data) {
 #define MS_CLK_DIR       (TRISBbits.TRISB2)
 
 // boot file content
-#include "../../soft/system/kernel/system_bin.c"
-#include "../../soft/bootstrap/bootstrap_bin.c"
+#include "../../../software/system/kernel/system-img.c"
+#include "../../../software/bootstrap/bootstrap-img.c"
 
 volatile unsigned short kbd_dat;
 volatile unsigned short kbd_sin;
