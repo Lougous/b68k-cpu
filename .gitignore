@@ -8,3 +8,9 @@ glue/incremental_db/
 glue/output_files/
 glue/simulation/
 glue/glue.qws
+
+mfp/nbproject/Makefile-*
+mfp/nbproject/Package-*
+mfp/nbproject/private
+mfp/build/
+mfp/dist/
