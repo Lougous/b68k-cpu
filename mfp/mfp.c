@@ -73,7 +73,7 @@
 #define _XTAL_FREQ       64000000UL  // 16 MHz (default configuration)
 
 // debug UART
-void putch(unsigned char data) {
+void putch(char data) {
     while( ! U1ERRIRbits.TXMTIF)          // wait until the transmitter is ready
         continue;
     U1TXB = data;                     // send one character
@@ -476,19 +476,22 @@ void main(void) {
     ////////////////////////////////////////////////////////////////////////////
     __delay_ms(500);
    
-    const unsigned char *flash_base = (const unsigned char *)&system_bin[0];;
+    const unsigned char *flash_base = (const unsigned char *)&system_bin[0];
+    unsigned char dbg_mode = 0;
     
     if (((unsigned char)(kbd_dat >> 6)) == 0x1B) {
         // PS/2 code for 's'
-        printf("[MFP] select bootstrap ROM\n");
+        printf("[MFP] bootstrap ROM\n");
         flash_base = (const unsigned char *)&bootstrap_bin[0];
+        dbg_mode = 1;
+    } else if (((unsigned char)(kbd_dat >> 6)) == 0x23) {
+        // PS/2 code for 'd'
+        dbg_mode = 1;        
     }
     
     ////////////////////////////////////////////////////////////////////////////
     // bootstrap
     ////////////////////////////////////////////////////////////////////////////
-    unsigned char dbg_mode = (unsigned char)(0 << 7);
-
     unsigned short flash_address = 0;
 
     while (flash_address < 512) {
@@ -504,14 +507,14 @@ void main(void) {
     if (dbg_mode) printf("[MFP] -rst\n");
     DEASSERT_RSTn;
     
-    __delay_ms(300);  // ???
-
-    // ensure reset not asserted by someone else
+     // ensure reset not asserted by someone else
     while (! RSTn);
+
+    __delay_us(1);  // must not exceed tRAS max (10 us)
 
     // read bootstrap option pin
 
-#define ACK_PULSE_READ_EXTRA  { TRISA = 0;  ASSERT_ACKn; while (! CEn); __delay_us(1); TRISA = 0xFF;  DEASSERT_ACKn; }
+#define ACK_PULSE_READ_EXTRA  { TRISA = 0; TRISA = 0;  ASSERT_ACKn; while (! CEn); __delay_us(2); TRISA = 0xFF;  DEASSERT_ACKn; }
 #define ACK_PULSE_READ  { TRISA = 0;  ASSERT_ACKn; while (! CEn); TRISA = 0xFF;  DEASSERT_ACKn; }
 #define ACK_PULSE_WRITE  { ASSERT_ACKn; while (! CEn); DEASSERT_ACKn; }
 
@@ -519,9 +522,9 @@ void main(void) {
     for (flash_address = 0; flash_address < 512; flash_address++) {
        
         if (! CEn) {
-            // swap odd/even .... ??!?
-//            LATA = boot_bin[(flash_address & ~1) | ((~flash_address) & 1)];
+            // swap odd/even (first DMA access with LDS# => MSB)
             LATA = flash_base[(flash_address & 0xFFFE) | ((~flash_address) & 1)];
+            
             // read data needs to be hold on bus for up to 500 ns (8 MHz CPU clock)
             // this is specific to boot strap IO access
             ACK_PULSE_READ_EXTRA;
@@ -535,7 +538,7 @@ void main(void) {
     
     }
     
-    if (dbg_mode) printf("[MFP] 512B boot sector loaded\n");
+    if (dbg_mode) printf("[MFP] BS OK\n");
 
     unsigned char address = 0;
     
@@ -633,7 +636,7 @@ void main(void) {
                     } else {
                         post = PORTA;
                         ACK_PULSE_WRITE;
-                        printf("[MFP] POST=%Xh\n", post);
+                        printf("[MFP] POST=%02Xh\n", post);
                     }
 
                     break;
