@@ -130,7 +130,7 @@ The MFP has only two memory locations accessible through the expansion bus: one 
 | memory range      | access | size   | memory area
 |:-----------------:|:------:|:------:|:-----
 | 000000h - 7FFFFFh | U/S    | 8MiB   | DRAM. memory address translation/mask/check for user mode only |
-| 800000h - 8FFFFFh | S	     | 7MiB   | DO NOT USE. mirrors F00000h - FFFFFFh                          |
+| 800000h - EFFFFFh | S	     | 7MiB   | DO NOT USE. mirrors F00000h - FFFFFFh                          |
 | F00000h - F1FFFFh | S      | 128kiB | MFP registers. address bits 16:1 are ignored                   |
 | F20000h - F3FFFFh | S      | 128kiB | expansion bus connector J9                                     |
 | F40000h - F5FFFFh | S      | 128kiB | expansion bus connector J11                                    |
@@ -152,5 +152,5 @@ This table below is no spec, it just shows the parts that equip the board on my 
 | U3, U6, U7 | 74F245 |
 | U4 | EPM7128SLC84-10 |
 | U5 | PIC18F27K42SP |
-| U8 | 74F148 |
+| U8 | 74HC148 |
 | X2 | 12-MHz |
