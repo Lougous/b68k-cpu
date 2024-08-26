@@ -135,3 +135,5 @@ set_global_assignment -name EDA_OUTPUT_DATA_FORMAT VHDL -section_id eda_simulati
 set_instance_assignment -name CUT ON -from reg_pmu_mask[*] -to pmu_access_error
 set_global_assignment -name FMAX_REQUIREMENT "20 MHz" -section_id GCLK
 set_instance_assignment -name CLOCK_SETTINGS GCLK -to GCLK
+
+set_instance_assignment -name STATE_MACHINE_PROCESSING AUTO -to s_state

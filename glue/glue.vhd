@@ -60,19 +60,23 @@ architecture rtl of glue is
   signal io_address : std_logic_vector(2 downto 0);
   
   -- states
-  signal s_0      : std_logic;
-  signal s_cpu    : std_logic;
-  signal s_dram   : std_logic;
-  signal s_ref    : std_logic;
-  signal s_io_1   : std_logic;
-  signal s_io_2   : std_logic;
-  signal s_io_3_r : std_logic;
-  signal s_io_3_w : std_logic;
-  signal s_io_4   : std_logic;
-  signal s_io_5   : std_logic;
-  signal s_io_6   : std_logic;
-  signal s_io_7   : std_logic;
+  type state_type is (
+    S_IDLE,
+    S_CPU,
+    S_DRAM  ,
+    S_REFRESH,
+    S_IO_1  ,
+    S_IO_2  ,
+    S_IO_3_R,
+    S_IO_3_W,
+    S_IO_4  ,
+    S_IO_5  ,
+    S_IO_6  ,
+    S_IO_7  
+    );
 
+  signal s_state : state_type;
+  
   signal data_cs_n : std_logic;
   signal addr_cs_n : std_logic;
 
@@ -110,7 +114,7 @@ architecture rtl of glue is
 begin  -- architecture rtl
 
   usr_phy_ad <= (CPU_A(22 downto 12) and ("0" & reg_pmu_mask)) or reg_pmu_base;
-  
+
   -- address mux, shared between DRAM and possibly IO bus address/data lines
   M_A(7 downto 0) <=
     ----------------------------------------------------------------------------
@@ -139,7 +143,7 @@ begin  -- architecture rtl
     -- IO bus ops
     ----------------------------------------------------------------------------
     -- IO chip select 1 (IO bus address phase)
-    "011" when s_io_1 = '1' or s_io_2 = '1' else
+    "011" when s_state = S_IO_1 or s_state = S_IO_2 else
     -- IO chip select (IO bus data phase)
     io_address when a_sel_address = '0' else
     ----------------------------------------------------------------------------
@@ -190,19 +194,8 @@ begin  -- architecture rtl
       G_OEn_HI <= '1';
       G_OEn_LO <= '1';
       G_OEn    <= '1';
-      
-      s_0      <= '1';
-      s_cpu    <= '0';
-      s_dram   <= '0';
-      s_ref    <= '0';
-      s_io_1   <= '0';
-      s_io_2   <= '0';
-      s_io_3_r <= '0';
-      s_io_3_w <= '0';
-      s_io_4   <= '0';
-      s_io_5   <= '0';
-      s_io_6   <= '0';
-      s_io_7   <= '0';
+
+      s_state <= S_IDLE;
 
       data_cs_n <= '1';
       addr_cs_n <= '1';
@@ -237,296 +230,275 @@ begin  -- architecture rtl
       --------------------------------------------------------------------------
       -- states
       --------------------------------------------------------------------------
-      if s_0 = '1' then
-        M_WEn <= '1';
-        B_WEn <= '1';
-        dly <= '0';
+      case s_state is
+        when S_IDLE =>
+          M_WEn <= '1';
+          B_WEn <= '1';
+          dly <= '0';
 
-        if rf_req = '1' and CPU_ASn = '0' and CPU_RWn = '1' then
-          -- go for refresh
-          rf_req <= '0';
-
-          -- CAS first
-          casl_n <= '0';
-          casu_n <= '0';
-
-          -- state
-          s_0   <= '0';
-          s_ref <= '1';
+          if rf_req = '1' and CPU_ASn = '0' and CPU_RWn = '1' then
+            -- go for refresh
+            rf_req <= '0';
+            
+            -- CAS first
+            casl_n <= '0';
+            casu_n <= '0';
+            
+            -- state
+            s_state <= S_REFRESH;
           
-        elsif dma_in_progress = '1' then
-          if CPU_ASn = '0' then
-            ras_n    <= '0';
-            s_0      <= '0';
-            s_io_3_r <= '1';
-          end if;
+          elsif dma_in_progress = '1' then
+            if CPU_ASn = '0' then
+              ras_n    <= '0';
+              s_state  <= S_IO_3_R;
+            end if;
           
-        elsif CPU_ASn = '0' then
-          -- CPU access
-          s_0 <= '0';
-          
-          if pmu_access_error = '0' then
+          elsif CPU_ASn = '0' then
+            -- CPU access
+            if pmu_access_error = '0' then
 
-            if CPU_A(23) = '0' then
-              -- access to DRAM
-              a_sel_hilo <= '0';
+              if CPU_A(23) = '0' then
+                -- access to DRAM
+                a_sel_hilo <= '0';
           
-              M_WEn <= CPU_RWn;
+                M_WEn <= CPU_RWn;
 
-              DTACKn_sr <= "00";
+                DTACKn_sr <= "00";
+
+                -- state
+                s_state <= S_DRAM;
+              else
+                -- access to IO or internal registers
+                ras_n  <= '0';
+
+                G_OEn_HI <= '0';
+        
+                if io_address = "111" then
+                  -- two valid options, both valid in supervisor mode only
+                  --   PMU registers (write only)
+                  --   CPU space (interrupt vector)
+                  --   (all address bits are set to 1 during CPU space access)
+                  if CPU_A(8) = '0' and CPU_RWn = '0' then
+                    -- write to PMU registers (write only registers)
+                    DTACKn_sr <= "00";
+                    
+                    reg_update <= '1';
+                  elsif CPU_A(8) = '1' and CPU_RWn = '1' then
+                    -- consider here supervisor is wise enough to not do read
+                    -- access to this locations, so it has to be CPU space access (interrupt
+                    -- vector)
+                    -- VPA# is used for autovector; alternatively BERRn can be used
+                    -- here (with DTACK#) to redirect all interrupts to entry 0x60
+                    -- (spurious interrupt)
+                    VPAn_mask <= '0';
+                    -- note: DTACK# and VPA# (AVEC#) should never be simultaneously asserted.
+                  else 
+                    -- bus error
+                    BERRn_mask <= '0';
+                  end if;
+              
+                  -- state
+                  s_state <= S_CPU;
+                else
+                  -- IO bus access
+                  addr_cs_n <= '0';
+
+                  -- state
+                  s_state <= S_IO_1;
+                end if;
+              end if;
+            else
+              -- bad access, bus error
+              BERRn_mask <= '0';
 
               -- state
-              s_dram <= '1';
-            else
-              -- access to IO or internal registers
-              ras_n  <= '0';
-
-              G_OEn_HI <= '0';
-        
-              if io_address = "111" then
-                -- two valid options, both valid in supervisor mode only
-                --   PMU registers (write only)
-                --   CPU space (interrupt vector)
-                --   (all address bits are set to 1 during CPU space access)
-                if CPU_A(8) = '0' and CPU_RWn = '0' then
-                  -- write to PMU registers (write only registers)
-                  DTACKn_sr <= "00";
-              
-                  reg_update <= '1';
-                elsif CPU_A(8) = '1' and CPU_RWn = '1' then
-                  -- consider here supervisor is wise enough to not do read
-                  -- access to this locations, so it has to be CPU space access (interrupt
-                  -- vector)
-                  -- VPA# is used for autovector; alternatively BERRn can be used
-                  -- here (with DTACK#) to redirect all interrupts to entry 0x60
-                  -- (spurious interrupt)
-                  VPAn_mask <= '0';
-                  -- note: DTACK# and VPA# (AVEC#) should never be simultaneously asserted.
-                else 
-                  -- bus error
-                  BERRn_mask <= '0';
-                end if;
-              
-                -- state
-                s_cpu <= '1';
-              else
-                -- IO bus access
-                addr_cs_n <= '0';
-
-                s_0    <= '0';
-                s_io_1 <= '1';
-              end if;
+              s_state <= S_CPU;
             end if;
-          else
-            -- bad access, bus error
-            BERRn_mask <= '0';
-            s_cpu <= '1';
           end if;
-        end if;
-      end if;
 
-      if s_cpu = '1' then
-        -- CPU memory access, neither DRAM nor Bus
-        ras_n  <= '1';
+        when S_CPU =>
+          -- CPU memory access, neither DRAM nor Bus
+          ras_n  <= '1';
 
-        -- hold VPAn/BERRn (if so) until ASn de-asserted
-        if CPU_ASn = '1' then
-          VPAn_mask   <= '1';
-          BERRn_mask  <= '1';
-          s_cpu <= '0';
-          s_0 <= '1';
-        end if;
-      end if;
+          -- hold VPAn/BERRn (if so) until ASn de-asserted
+          if CPU_ASn = '1' then
+            VPAn_mask   <= '1';
+            BERRn_mask  <= '1';
+
+            s_state <= S_IDLE;
+          end if;
         
-      if s_io_1 = '1' then
-        -- Bus address cycle, MSB
-        -- first sub-cycle of a word access - works for write cycles only
-        even_cycle <= (not CPU_LDSn) and (not CPU_UDSn) and (not CPU_RWn);
+        when S_IO_1 =>
+          -- Bus address cycle, MSB
+          -- first sub-cycle of a word access - works for write cycles only
+          even_cycle <= (not CPU_LDSn) and (not CPU_UDSn) and (not CPU_RWn);
 
-        -- next cycle shows address LSB
-        a_sel_hilo <= '0';
-        s_io_1 <= '0';
-        s_io_2 <= '1';
-      end if;
-
-      if s_io_2 = '1' then
-        -- Bus address cycle, LSB
-
-        -- next cycle will show data on Bus
-        a_sel_address <= '0';
-      
-        s_io_2 <= '0';
-
-        addr_cs_n <= '1';
-
-        -- next cycle is turnover, disable HI+LO
-        G_OEn_HI <= '1';
-
-        B_WEn <= CPU_RWn;  -- DMA during CPU read operation
-
-        -- note: DMA during CPU read operation
-        if CPU_RWn = '1' then
-          -- read 
-          s_io_3_r <= '1';
-        else
-          -- write
-          s_io_3_w <= '1';
-        end if;
-          
-      end if;
-
-      if s_io_3_r = '1' then
-        -- Bus turnover cycle, read cycle
-
-        -- next cycle is data
-        -- UM 5.1.1/5.1.2 : When A0 equals zero, the upper data strobe is
-        -- issued; when A0 equals one, the lower data strobe is issued
-        B_A0     <= CPU_UDSn;
-
-        -- data from bus to both bytes of CPU data
-        G_OEn_LO <= '0';
-        G_OEn    <= '0';
-
-        data_cs_n <= '0';
-
-        s_io_3_r <= '0';
-        s_io_4   <= '1';
-      end if;
-
-      if s_io_3_w = '1' then
-        -- Bus turnover cycle, write cycle
-        if (CPU_LDSn = '1') or (even_cycle = '1') then
-          -- byte access even address or word access first cycle (even byte)
-          -- write MSB 15..8
-          G_OEn_HI <= '0';
-          B_A0     <= '0';
-        else
-          -- byte access odd address only or word access second cycle (odd byte)
-          -- write LSB 7..0
-          -- G_OEn_LO active
-          G_OEn_LO <= '0';
-          B_A0     <= '1';
-        end if;
-          
-        data_cs_n <= '0';
-
-        s_io_3_w <= '0';
-        s_io_4   <= '1';
-      end if;
-
-      if s_io_4 = '1' then
-        -- Bus data cycle, up to start of periph acknowledge
-
-        if B_ACKn_cdc = '0' then
-
-          casl_n <= rf_cnt(0) or (not dma_in_progress);
-          casu_n <= (not rf_cnt(0)) or (not dma_in_progress);
-
-          -- no DTACK# during DMA or during first bus cycle of a word access
-          DTACKn_sr <= (others => (dma_in_progress or even_cycle));
-
-          M_WEn <= not dma_in_progress;
-          
-          -- DMA
+          -- next cycle shows address LSB
           a_sel_hilo <= '0';
 
-          s_io_4 <= '0';
-          s_io_5 <= '1';
-        end if;
-      end if;
+          s_state <= S_IO_2;
 
-      if s_io_5 = '1' then
-        if even_cycle = '1' then
-          -- one turnover cycle in between even and odd bytes
+        when s_io_2 =>
+          -- Bus address cycle, LSB
+
+          -- next cycle will show data on Bus
+          a_sel_address <= '0';
+      
+          addr_cs_n <= '1';
+
+          -- next cycle is turnover, disable HI+LO
           G_OEn_HI <= '1';
-        end if;
-        
-        casl_n <= '1';
-        casu_n <= '1';
 
-        s_io_5 <= '0';
+          B_WEn <= CPU_RWn;  -- DMA during CPU read operation
 
-        if CPU_RWn = '1' then
-          s_io_6 <= '1';
-        else
-          data_cs_n <= '1';
-
-          s_io_7 <= '1';
-        end if;
-      end if;
-
-      if s_io_6 = '1' then
-        -- hold B_CEn and so read data
-        data_cs_n <= '1';
-        
-        s_io_6 <= '0';
-        s_io_7 <= '1';
-      end if;
-        
-      if s_io_7 = '1' then
-        -- Bus epilogue, up to end of periph acknowledge
-        ras_n  <= '1';
-
-        M_WEn  <= ras_n or not dma_in_progress;
-
-        a_sel_address <= '1';
- 
-        a_sel_hilo <= '1';
-
-        G_OEn    <= '1';
-        G_OEn_LO <= '1';
-        G_OEn_HI <= '1';
-        
-        B_A0     <= '1';  -- in case of second (odd byte) sub-access 
-
-        if B_ACKn_cdc /= '0' then
-          s_io_7 <= '0';
-          
-          even_cycle <= '0';
-
-          if even_cycle = '1' then
-            -- word write access, end of first cycle (even byte)
-            -- start second (odd byte) sub-access
-            data_cs_n <= '0';
-            G_OEn_LO <= '0';
-            a_sel_address <= '0';
-            s_io_4   <= '1';
+          -- note: DMA during CPU read operation
+          if CPU_RWn = '1' then
+            -- read 
+            s_state <= S_IO_3_R;
           else
-            s_0      <= '1';
+            -- write
+            s_state <= S_IO_3_W;
           end if;
-        end if;
-      end if;
 
-      if s_dram = '1' then
-        -- DRAM acccess
-        a_sel_hilo <= '1';
+        when S_IO_3_R =>
+          -- Bus turnover cycle, read cycle
 
-        -- state - stay 2 cycles in s_dram state
-        s_dram <= not a_sel_hilo;
-        s_0    <= a_sel_hilo;
-      end if;
+          -- next cycle is data
+          -- UM 5.1.1/5.1.2 : When A0 equals zero, the upper data strobe is
+          -- issued; when A0 equals one, the lower data strobe is issued
+          B_A0     <= CPU_UDSn;
 
-      if s_ref = '1' then
-        -- refresh cycle
-        if casl_n = '0' then
+          -- data from bus to both bytes of CPU data
+          G_OEn_LO <= '0';
+          G_OEn    <= '0';
+          
+          data_cs_n <= '0';
+          
+          s_state <= S_IO_4;
+
+        when S_IO_3_W =>
+          -- Bus turnover cycle, write cycle
+          if (CPU_LDSn = '1') or (even_cycle = '1') then
+            -- byte access even address or word access first cycle (even byte)
+            -- write MSB 15..8
+            G_OEn_HI <= '0';
+            B_A0     <= '0';
+          else
+            -- byte access odd address only or word access second cycle (odd byte)
+            -- write LSB 7..0
+            -- G_OEn_LO active
+            G_OEn_LO <= '0';
+            B_A0     <= '1';
+          end if;
+          
+          data_cs_n <= '0';
+
+          s_state <= S_IO_4;
+
+        when S_IO_4 =>
+          -- Bus data cycle, up to start of periph acknowledge
+
+          if B_ACKn_cdc = '0' then
+
+            casl_n <= rf_cnt(0) or (not dma_in_progress);
+            casu_n <= (not rf_cnt(0)) or (not dma_in_progress);
+            
+            -- no DTACK# during DMA or during first bus cycle of a word access
+            DTACKn_sr <= (others => (dma_in_progress or even_cycle));
+            
+            M_WEn <= not dma_in_progress;
+            
+            -- DMA
+            a_sel_hilo <= '0';
+            
+            s_state <= S_IO_5;
+          end if;
+
+        when S_IO_5 =>
+          if even_cycle = '1' then
+            -- one turnover cycle in between even and odd bytes
+            G_OEn_HI <= '1';
+          end if;
+          
           casl_n <= '1';
           casu_n <= '1';
-          ras_n  <= '0';
-        elsif dly = '0' then
-          -- hold RAS# low for 2 cycles
-          dly <= '1';
-        elsif ras_n = '0' then
-          ras_n <= '1';
-        else
-          s_ref <= '0';
-          s_0   <= '1';
-        end if;
-      end if;
+          
+          if CPU_RWn = '1' then
+            s_state <= S_IO_6;
+          else
+            data_cs_n <= '1';
+            
+            s_state <= S_IO_7;
+          end if;
 
+        when S_IO_6 =>
+          -- hold B_CEn and so read data
+          data_cs_n <= '1';
+          
+          s_state <= S_IO_7;
+        
+        when S_IO_7 =>
+          -- Bus epilogue, up to end of periph acknowledge
+          ras_n  <= '1';
+          
+          M_WEn  <= ras_n or not dma_in_progress;
+          
+          a_sel_address <= '1';
+          
+          a_sel_hilo <= '1';
+          
+          G_OEn    <= '1';
+          G_OEn_LO <= '1';
+          G_OEn_HI <= '1';
+          
+          B_A0     <= '1';  -- in case of second (odd byte) sub-access 
+          
+          if B_ACKn_cdc /= '0' then
+            even_cycle <= '0';
+
+            if even_cycle = '1' then
+              -- word write access, end of first cycle (even byte)
+              -- start second (odd byte) sub-access
+              data_cs_n <= '0';
+              G_OEn_LO <= '0';
+              a_sel_address <= '0';
+
+              s_state <= S_IO_4;
+            else
+              s_state <= S_IDLE;
+            end if;
+          end if;
+
+        when S_DRAM =>
+          -- DRAM acccess
+          a_sel_hilo <= '1';
+
+          -- state - stay 2 cycles in s_dram state
+          if a_sel_hilo = '1' then
+            s_state <= S_IDLE;
+          end if;
+
+        when S_REFRESH =>
+          -- refresh cycle
+          if casl_n = '0' then
+            casl_n <= '1';
+            casu_n <= '1';
+            ras_n  <= '0';
+          elsif dly = '0' then
+            -- hold RAS# low for 2 cycles
+            dly <= '1';
+          elsif ras_n = '0' then
+            ras_n <= '1';
+          else
+            s_state <= S_IDLE;
+          end if;
+
+      end case;
+      
       --------------------------------------------------------------------------
       -- counter for refresh
       --------------------------------------------------------------------------
-      if dma_in_progress = '0' or s_io_3_r = '1' then
+      if dma_in_progress = '0' or s_state = S_IO_3_R then
         rf_cnt <= rf_cnt + 1;
 
         if dma_in_progress = '1' and rf_cnt(2 downto 0) = "110" then
@@ -535,16 +507,19 @@ begin  -- architecture rtl
         end if;
       end if;
 
-      if (not rf_cnt) = 0 and s_io_7 = '1' then
-        dma_in_progress <= '0';
-      end if;
-      
       -- 1024 refresh cycles every 16 ms
       -- at 8MHz, every 125 cycles => rounded up to 128 ...
       if dma_in_progress = '0' and rf_cnt(6 downto 0) = 0 then
         rf_req <= '1';
       end if;
 
+      --------------------------------------------------------------------------
+      -- DMA start/stop
+      --------------------------------------------------------------------------
+      if (not rf_cnt) = 0 and s_state = S_IO_7 then
+        dma_in_progress <= '0';
+      end if;
+      
       --------------------------------------------------------------------------
       -- register update
       --------------------------------------------------------------------------
@@ -569,21 +544,28 @@ begin  -- architecture rtl
   end process;
 
   process (GCLK) is
+    variable dram : std_logic;
   begin
     if falling_edge(GCLK) then
-      casl_fall_n <= casl_n and not (s_dram and CPU_RWn);
-      casu_fall_n <= casu_n and not (s_dram and CPU_RWn);
+      if s_state = S_DRAM then
+        dram := '1';
+      else
+        dram := '0';
+      end if;
+      
+      casl_fall_n <= casl_n and not (dram and CPU_RWn);
+      casu_fall_n <= casu_n and not (dram and CPU_RWn);
     end if;
   end process;
  
     
-  process (casl_fall_n, casu_fall_n, s_dram, CPU_RWn, CPU_LDSn, CPU_UDSn) is
+  process (casl_fall_n, casu_fall_n, s_state, CPU_RWn, CPU_LDSn, CPU_UDSn) is
   begin
       if
         -- DMA or refresh
         (casl_fall_n = '0') or
         -- CPU => DRAM
-        (s_dram = '1' and ((CPU_RWn = '0') and (CPU_LDSn = '0')))
+        (s_state = S_DRAM and ((CPU_RWn = '0') and (CPU_LDSn = '0')))
       then
         M_CASLn <= '0';
       else
@@ -594,7 +576,7 @@ begin  -- architecture rtl
         -- DMA or refresh
         (casu_fall_n = '0') or
         -- CPU => DRAM
-        (s_dram = '1' and ((CPU_RWn = '0') and (CPU_UDSn = '0')))
+        (s_state = S_DRAM and ((CPU_RWn = '0') and (CPU_UDSn = '0')))
       then
         M_CASUn <= '0';
       else
@@ -607,7 +589,7 @@ begin  -- architecture rtl
     -- refresh
     '0' when ras_n = '0' else
     -- CPU access
-    '0' when CPU_ASn = '0' and ((s_0 = '1' and (rf_req = '0' or CPU_RWn = '0')) or (s_dram = '1') or (s_cpu = '1')) else
+    '0' when CPU_ASn = '0' and ((s_state = S_IDLE and (rf_req = '0' or CPU_RWn = '0')) or (s_state = S_DRAM) or (s_state = S_CPU)) else
     '1';
 
   CPU_BERRn  <= BERRn_mask or CPU_ASn;
